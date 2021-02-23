@@ -1,0 +1,178 @@
+<HTML>
+	<HEAD>
+		<meta http-equiv='cache-control' content='no-cache'>
+		<meta http-equiv='expires' content='0'>
+		<meta http-equiv='pragma' content='no-cache'>
+		<link href = "css/bootstrap.min.css" rel = "stylesheet">
+        <link rel="stylesheet" href="themes/blue/style.css" type="text/css" media="print, projection, screen" />
+        <link href = "css/custom.css" rel = "stylesheet">
+		<script type="text/javascript" src="./js/jquery/jquery-3.0.0.js"></script>
+		<script type="text/javascript" src="./js/bootstrap.js"></script>
+		
+
+    	<script type="text/javascript" src="./js/app/constants.js"></script>
+		<script type="text/javascript" src="./js/app/util.js"></script>
+		<script type="text/javascript" src="./js/app/primeapi.js"></script>
+		<script type="text/javascript" src="./js/app/clientcache.js"></script>
+		
+	</HEAD>
+	<BODY>
+		<script type="text/javascript"> 
+		
+		var emailId = null;
+		var accounts = [];
+		
+		jQuery(document).ready(function(){
+				
+				if(!isFirstTimeLogin())
+				{
+					/*
+					* No Need to get oauth code as we already have refresh_token
+					*/
+					log("index.html page redirected to the user home page as user is already signed in");
+					window.location = getEndpoint(FieldNames.HOSTED_MAIN_PAGE_ADDR);
+				}
+				log("User is not yet signed in- follow sign-in process");
+				guiInit();
+				
+        });
+			
+		function guiInit()
+		{
+			$("#accountListviewContainerId").hide();
+			$("#loginContainerId").show();
+			$( "#btn-login" ).click(function() {
+					  var emailid = $.trim(new String($('#email').val()));
+					  if(isEmpty(emailid) || !isEmail(emailid))
+					  {
+						alert("Please enter a valid email address");
+						return;
+					  }
+					  emailId = emailid;
+					  fetchAndShowAccounts();
+				});
+			
+		}
+		
+		function redirecttoCPLogin(index)
+		{
+			var id = "#div_" + index;
+			$(id).css( "color", "red" );
+			var ac = accounts[index];
+			
+			PRIMEAPI.authorize(ac.id, emailId);
+		}
+		
+		function populateAccount(account, index)
+		{
+		    var name = isEmpty(account.attributes.name) ? "" : account.attributes.name;
+			var content = "<div id='div_" + index + "' onclick='redirecttoCPLogin(" + index + ")'>" + 
+								"<div class='col-sm-1 col-md-offset-3'>" + 
+									"<div class='thumbnail'>" + 
+										"<img class='img-responsive user-photo' src='" + account.attributes.logoUrl +"'>" + 
+									"</div>" + 
+								"</div>" + 
+
+								"<div class='col-sm-5'>" + 
+									"<div class='panel panel-default'>" + 
+										"<div class='panel-heading'>" + 
+											"<strong>Account ID: " + account.id + "</strong> <span class='text-muted'>" + name + "</span>" +
+										"</div>" +
+										"<div class='panel-body'>" +
+											account.attributes.subdomain + 
+										"</div>" +
+									"</div>" + 
+								"</div>" + 
+							"</div>";
+			return content;
+		}
+		
+		function fetchAndShowAccounts()
+		{
+			 $("#listofaccountsdiv").html("");
+			 $("#accountListviewContainerId").show();
+			 $("#loginContainerId").hide();
+
+			 PRIMEAPI.getAccountsFromEmail(emailId).then(function(lData){
+			 	if(lData.data.length == 0){
+					alert("Either no account linked with the given emailid or something goes wrong.  Please retry");
+					location.reload();
+					return;
+				}
+
+				var index = 0 ;
+				jQuery.each(lData.data,function(index,eachAccount){
+                      var content = populateAccount(eachAccount, index);
+					  accounts[index]=eachAccount;
+					  index++;
+					  $("#listofaccountsdiv").append(content);
+                });
+
+			 });
+		 }
+		    
+		</script>
+		
+		<div id = "loginContainerId">		
+		<section id="login">
+			<div class="container">
+				<div class="row">
+					<div class="col-xs-12">
+						<div class="form-wrap">
+							<div class = "panel panel-success">
+								<div class = "panel-heading">
+									<h1  class = "panel-title">Welcome to Sample Learner Application</h1>
+								</div>
+							</div>
+							<form role="form" action="javascript:;" method="post" id="login-form" autocomplete="off">
+								<div class="form-group">
+									<label for="email" class="sr-only">Email</label>
+									<input type="email" name="email" id="email" class="form-control" placeholder="somebody@example.com">
+								</div>
+								<input type="submit" id="btn-login" class="btn btn-custom btn-lg btn-block" value="Submit">
+							</form>
+							<hr>
+						</div>
+					</div> <!-- /.col-xs-12 -->
+				</div> <!-- /.row -->
+			</div> <!-- /.container -->
+		</section>
+
+		<footer id="footer">
+			<div class="container">
+				<div class="row">
+					<div class="col-xs-12">
+						<p>Sample Learner Application</p>
+						<p>Powered by 
+							<strong>
+								<a href="https://captivateprime.adobe.com/docs/primeapi/v2/" target="_blank">
+									<div class="text-link">Captivate Prime</div>
+								</a>
+							</strong>
+						</p>
+					</div>
+				</div>
+			</div>
+		</footer>
+		</div>
+
+		<div id ="accountListviewContainerId" >
+			<div class='container'>
+				<div class='row'>
+						<BR>
+						<div class = "panel panel-success">
+							<div class = "panel-heading">
+								<h3 class = "panel-title"><center>Please select the linked account of your preference</center></h3>
+							</div>
+						</div>
+				</div><!-- /row -->
+				<BR><BR><BR>
+				<div class='row' id = "listofaccountsdiv">
+					<!-- will be added dynamically -->
+				</div><!-- /row -->
+			</div><!-- /container -->
+		</div>
+
+	</BODY>
+</HTML>
+

@@ -1,0 +1,406 @@
+<!doctype html>
+<html>
+	<head>
+    	<meta charset="utf-8" />
+
+    	<title>
+        	Prime Learner App Using Public-Api
+    	</title>
+		
+        <link href = "css/bootstrap.min.css" rel = "stylesheet">
+        <link rel="stylesheet" href="themes/blue/style.css" type="text/css" media="print, projection, screen" />
+        <link href = "css/custom.css" rel = "stylesheet">
+		<script type="text/javascript" src="./js/jquery/jquery-3.0.0.js"></script>
+    	<script type="text/javascript" src="./js/bootstrap.js"></script>
+		
+		<script type="text/javascript" src="./js/app/constants.js"></script>
+		<script type="text/javascript" src="./js/app/util.js"></script>
+		<script type="text/javascript" src="./js/app/primeapi.js"></script>
+		<script type="text/javascript" src="./js/app/clientcache.js"></script>
+		
+	</head>
+	<body style="overflow: scroll;">
+		
+	
+    	<script type="text/javascript">
+    		var coursesFetched = [];
+
+			
+			jQuery(document).ready(function(){
+				
+				if(isFirstTimeLogin())
+				{
+					var state = getUrlParameter('state');
+					/*filter redirect-urls based on your dummy data provided in the redirection url*/
+					if(state != null && state == Constants.OCODE_DATA)
+					{
+					    /*Fetch refresh_token and load data from server*/
+						log("First time Login after sign out, fetch refresh_token and access_token and load data from server");
+						getRefreshTokenAndFetchData();
+					}
+					else{
+						log("trying to access the user home page directly by typing main page url, redirect user to sign-in page");
+						location.href=getEndpoint(FieldNames.HOSTED_START_PAGE_ADDR);
+					}
+				}
+				else{
+					if(isAccessTokenExpired())
+					{
+					    /*Fetch access_token and load data from server*/
+						log("saved access_token is expired. Fetch access_token and load data from server");
+					    getAccessTokenAndFetchData();
+					}
+					else{
+					    /* No Need to Fetch access_token as it is valid, just load data from server using the saved access_token*/
+						log("Have valid access_token, load data from server using saved access_token");
+						invokeAPIs();
+					}
+				}
+
+				guiInit();
+            });
+			
+			
+			function guiInit()
+			{
+				$( "#cp_learner_sign_out" ).click(function() {
+				      log("Clear credentials and redirect to sign-in page");
+					  CLIENT_CACHE.saveCredentials("", "", "", 0);
+					  location.href=getEndpoint(FieldNames.HOSTED_START_PAGE_ADDR);
+				});
+			}
+			
+			function getRefreshTokenAndFetchData(){
+				PRIMEAPI.getRefreshToken(getUrlParameter('code'),Constants.APP_ID,Constants.APP_SECRET).then(function(data){
+					/*
+					* Save response so that not every time is required to send refresh token and client secret to fetch the access_token
+					*/
+					log("Refresh token fetched successfully, now saving to DB");
+					CLIENT_CACHE.saveCredentials(data.access_token, data.refresh_token, data.user_id, getCurrentTimeMillis());
+					invokeAPIs();
+				}, 
+				function(response){
+					log('Error: ' + response.responseText);
+					alert("Server looks busy..Please retry...!!");
+					location.href=getEndpoint(FieldNames.HOSTED_START_PAGE_ADDR);
+				});
+			}
+			
+			function getAccessTokenAndFetchData(){
+
+				PRIMEAPI.getAccessToken(Constants.APP_ID,Constants.APP_SECRET,CLIENT_CACHE.getRefreshToken()).then(function(data){
+					/*
+					Save response so that not every time is required to send refresh token and client secret to fetch the 		
+					access_token
+					*/
+					log("Access token is fetched successfully, now saving this to DB");
+					CLIENT_CACHE.saveCredentials(data.access_token, data.refresh_token, data.user_id, getCurrentTimeMillis());
+					invokeAPIs();
+
+				}, function(response){
+					log("refresh token got invalid so fetch refreshtoken once again");
+					var state = getUrlParameter('state');
+					/*filter redirect-urls based on your dummy data provided in the redirection url*/
+					if(state != null && state == Constants.OCODE_DATA){
+						/*Fetch refresh_token and load data from server*/
+						log("First time Login after sign out, fetch refresh_token and access_token and load data from server");
+						getRefreshTokenAndFetchData();
+					}
+				});
+
+			}
+			
+			function invokeAPIs(){
+                loadUserDetails();
+                loadCourses();
+            }
+			
+			
+			
+			function prepareCourseUIElement(obj)
+			{
+				var uiElement = '<div class="row">' + 
+									'<div class="col-md-3"> </div>' + 
+									'<div class="col-md-6">' +
+										'<div class="panel panel-default">' +
+											'<div class="panel-heading">' + 
+												'<div id="course_type" class="navbar-right">' +
+													obj.resourceType +
+												'</div>' +
+												'<div id="course_timeline" class="right">' +
+													obj.name + 
+												'</div>' +
+											'</div>' +
+											'<div class="panel-body">' +
+												'<div style="float:left">' + 
+													"<a onclick='loadCourseDetailsInDescriptionArea(\"" + obj.id + "\")'>" + 
+														'Explore' + 
+													'</a>' + 
+												 '</div>' + 
+												 '<div style="float:right">' +
+													'<span style="vertical-align: top;">' +
+														obj.progressMsg + 
+													'</span>' +
+													'<progress class ="progress" id="progressbar" value="' + obj.progressPercent +'" max="100"></progress>' +
+												  '</div>' +
+											  '</div>' +
+										'</div>' +
+									'</div>' +
+									'<div class="col-md-3">  </div>' +
+								'</div>';
+				return uiElement;
+			}
+			
+			
+			
+			function displayCourseDetails(id)
+			{
+			    var obj = coursesFetched[id];
+				
+				var name = getValue(obj.name);
+				var enrollmentType = getValue(obj.enrollmentType);
+				var courseType = getValue(obj.resourceType);
+				var description = getValue(obj.description);
+				var descriptionTitle = isEmpty(description) ? ("There is no description for the Course " + name) : "<B> Description </B><BR>";
+				var overview = getValue(obj.overview);
+				var overViewTitle = isEmpty(description) ? "" : "<B> Overview </B><BR>";
+				
+				var uiElement = '<div class="row">' + 
+									'<div class="col-md-3"> </div>' + 
+									'<div class="col-md-6">' +
+										'<div class="panel panel-default">' +
+											'<div class="panel-heading">' + 
+												'<div id="course_type" class="navbar-right"><B>' +
+													courseType +
+												'</B></div>' +
+												'<div id="course_timeline" class="right"><B>' +
+													name + 
+													'</B><div>(' + enrollmentType + ')</div>' + 
+												'</div>' +
+											'</div>' +
+											'<div class="panel-body">' +
+												'<div>' + descriptionTitle + description + '</div>' + 
+												'<div>' + overViewTitle + overview + '</div>' + 
+											'</div>' +
+										'</div>' +
+									'</div>' +
+									'<div class="col-md-3">  </div>' +
+								'</div>' + 
+								'<div class="buttonDivArea">' +
+									"<input type=\"button\"  value=\"Play content\" id=\"playHereId\" onclick='playCourseUtil(\"" + obj.id + "\")'/>" + 									
+								'</div>';
+				return uiElement;
+			}
+			
+			function playCourseUtil(courseId)
+			{
+				$("#coursecontent_description_area").hide();
+				window.addEventListener("message", function closePlayer(){
+					if(event.data === "status:close"){
+						resetCourseDescArea();
+						window.removeEventListener("message", closePlayer);
+					}
+				});
+				try{
+					playCourseUsingEmbeddablePlayer(courseId, '#samePagePlayerDisplayIframeId', false, "800px;","400px;");
+				}
+				catch(err){
+					alert("Problem occured while loading course in embeddable player, try once again");
+				}
+			}
+			
+			
+			function playCourseUsingEmbeddablePlayer(courseId, iframeId, isPopupToDisplay, width, height)
+            {
+                let url = PRIMEAPI.getEmbeddablePlayerUrl(courseId);
+				log(url);
+                $(iframeId).attr("height", height);
+                $(iframeId).attr("width", width);
+                $(iframeId).attr("src", url);
+                $(iframeId).attr("style","display:block");
+            }
+			
+			
+			function loadCourseDetailsInDescriptionArea(id)
+			{
+				jQuery("#coursecontent_description_area").html('');
+				resetCourseDescArea();
+				$("#coursecontent_description_area").append(displayCourseDetails(id));
+			}
+			
+			function resetCourseDescArea(){
+					$("#samePagePlayerDisplayIframeId").attr('src', 'about:blank');
+					$("#samePagePlayerDisplayIframeId").hide();
+					$("#coursecontent_description_area").show();
+			}
+			
+
+            function loadCourses(){
+            	PRIMEAPI.getEnrolledCourses(CLIENT_CACHE.getAccessToken()).then(function(lData){
+            		
+            		let mapCourseIdToCourse = [];
+							
+                    jQuery.each(lData.included,function(index,obj){
+							let lorId = obj.id.split("_")[0];
+							if(mapCourseIdToCourse[lorId]===undefined)
+							{
+								mapCourseIdToCourse[lorId] = {};
+							}
+							if(obj.type === "learningObjectResource")
+							{
+								mapCourseIdToCourse[lorId].resourceType = obj.attributes.resourceType;
+							}
+							if(obj.type === "learningObjectInstanceEnrollment")
+							{
+								mapCourseIdToCourse[lorId].progressPercent = obj.attributes.progressPercent;
+							}
+					});
+						
+					jQuery.each(lData.data,function(index,obj){
+                        let id = new String(obj.id);
+						let name = obj.attributes.localizedMetadata[0].name;
+						let description = obj.attributes.localizedMetadata[0].description;
+						let overview = obj.attributes.localizedMetadata[0].overview;
+						let enrollmentType = obj.attributes.enrollmentType;
+						if(mapCourseIdToCourse[id] !== undefined){
+							mapCourseIdToCourse[id].id = id;
+							mapCourseIdToCourse[id].name = name;
+							mapCourseIdToCourse[id].description = description;
+							mapCourseIdToCourse[id].overview = overview;
+							mapCourseIdToCourse[id].enrollmentType = enrollmentType;
+							mapCourseIdToCourse[id].progressMsg = "Progress  ";
+							coursesFetched[id] = mapCourseIdToCourse[id];
+							$("#coursecontent").append(prepareCourseUIElement(coursesFetched[id]));
+							
+							log("@[" + id + "]: "  + mapCourseIdToCourse[id].id + ", "
+                                                            + mapCourseIdToCourse[id].name + ", "
+															+ mapCourseIdToCourse[id].description + ", "
+															+ mapCourseIdToCourse[id].overview + ", "
+															+ mapCourseIdToCourse[id].enrollmentType + ", "
+															+ mapCourseIdToCourse[id].resourceType + ", "
+															+ mapCourseIdToCourse[id].progressPercent);
+						}
+					});
+            	}, function(errormessage){
+						log("error: " + errormessage);
+						alert("Sign-Out and Sign-in again");
+            	});
+            }
+			
+
+            function loadUserDetails(){
+
+            	PRIMEAPI.getUserDetails(CLIENT_CACHE.getAccessToken()).then(function(lData){
+					log(lData);
+                    log($("profilepic"));
+                    $("#profilepic").attr('src', lData.data.attributes.avatarUrl);
+                    $("#lName").html(lData.data.attributes.name);
+            	}, function(errormessage){
+					log("error: " + errormessage);
+					alert("Sign-Out and Sign-in again");
+            	});
+
+            }
+
+    	</script>
+
+        <nav class="navbar navbar-inverse">
+            <div class="container-fluid">
+                <div class="navbar-header">
+                    <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1" aria-expanded="false">
+                        <span class="sr-only">Toggle navigation</span>
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                    </button>
+                    <a class="navbar-brand">Learner App</a>
+                </div>
+                <div id="navbarCollapse" class="collapse navbar-collapse">
+                    <ul class="nav  navbar-right navbar-brand" >
+						<div class="btn btn-danger" id = "cp_learner_sign_out">
+							<span class="glyphicon glyphicon-log-out"></span>
+							Sign Out
+						 </div>
+                    </ul>
+                </div>
+            </div>
+        </nav>
+
+        <div class="container">
+            <div class="row">
+                <div class="col-md-2">
+                    <center>
+                        <!-- Profile Picture Goes Here -->
+                        <div id="image">
+                            <div class="profile-header-container">   
+                                <div class="profile-header-img">
+                                    <img id="profilepic" class="img-circle" src="" />
+                                    <!-- badge -->
+                                    <div class="rank-label-container">
+                                        <span id="lName" class="label label-default rank-label"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </center>
+                </div>
+                <div class="col-md-5">
+                   
+                    
+                </div>
+            </div>
+            <br>
+            <div class="row">
+                <div class="col-md-12">
+                    <div id="selective_data">
+                        <h4>My Enrollments</h4>
+                        <ul id="myTab" class="nav nav-tabs">
+                            <li class="active"><a data-toggle="tab" href="#courses">Courses</a></li>
+                        </ul>
+
+                        <div class="tab-content">
+                            <div id="courses" class="tab-pane fade in active">
+                                <!-- Course Data goes here -->
+                                <br>
+								<div id="container-1">
+									<div id="first" name="first">
+										<div id="coursecontent" class="col-md-6">
+
+											<div id="enrollments_courses">
+
+											</div>
+										</div>
+									</div>
+									<div id="second" name="second">	
+										<div class="modelDescriptionArea" id="samePagePlayerDisplayDivId">
+											
+											<div id="coursecontent_description_area" class="col-md-6">
+
+												<div id="enrollments_courses_description">
+
+												</div>
+											</div>
+											
+										</div>
+										
+										<iframe  src="" id="samePagePlayerDisplayIframeId" style="visibility:hidden;" allowfullscreen webkitallowfullscreen></iframe>
+										
+									</div>
+								</div>
+								
+
+                            </div>
+                          
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+		
+		
+
+
+	</body>
+
+
+</html>
